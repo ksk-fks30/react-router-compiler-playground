@@ -5,26 +5,41 @@ import { useForm } from "react-hook-form";
 import { useActionData, useSubmit } from "react-router";
 import { z } from "zod";
 
-const formSchema = z
-  .object({
-    email: z.email("有効なメールアドレスを入力してください。"),
-    password: z.string().min(8, "パスワードは8文字以上で入力してください。"),
-    passwordConfirmation: z.string().min(1, "確認用パスワードを入力してください。"),
-  })
-  .superRefine((values, ctx) => {
-    if (values.password !== values.passwordConfirmation) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["passwordConfirmation"],
-        message: "パスワードが一致しません。",
-      });
+function postprocess<T extends z.ZodType> (
+    baseSchema: T,
+    callback: z.core.CheckFn<z.core.output<T>>,
+    when: z.core.$ZodCheckDef['when'] = () => true,
+) {
+  const newCheck = z.check(callback);
+  newCheck._zod.def.when = when;
+  return baseSchema.check(newCheck);
+}
+
+const formSchema = postprocess(
+    z.object({
+      plan: z.number().int().min(1, "プランを選択してください。").optional(),
+      email: z.email("有効なメールアドレスを入力してください。"),
+      password: z.string().min(8, "パスワードは8文字以上で入力してください。"),
+      passwordConfirmation: z.string().min(1, "確認用パスワードを入力してください。"),
+    }),
+    (ctx) => {
+      if (ctx.value.password !== ctx.value.passwordConfirmation) {
+        ctx.issues.push({
+          code: "custom",
+          message: "パスワードが一致しません。",
+          input: ctx.value.passwordConfirmation,
+          path: ['passwordConfirmation'],
+        });
+      }
+      // 続けて他のバリデーションも書ける
     }
-  });
+);
 
 type FormValues = z.infer<typeof formSchema>;
 
 
 type SubmissionValues = {
+  plan?: number;
   email: string;
   password: string;
   passwordConfirmation: string;
@@ -36,7 +51,9 @@ type ActionData =
 
 export async function clientAction({ request }: Route.ClientActionArgs) {
   const formData = await request.formData();
+  const rawPlan = formData.get("plan");
   const values: SubmissionValues = {
+    plan: rawPlan === null || rawPlan === "" ? undefined : Number(rawPlan),
     email: String(formData.get("email") ?? ""),
     password: String(formData.get("password") ?? ""),
     passwordConfirmation: String(formData.get("passwordConfirmation") ?? ""),
@@ -70,6 +87,7 @@ export default function FormSample() {
     mode: "onBlur",
     reValidateMode: "onBlur",
     defaultValues: {
+      plan: undefined,
       email: "",
       password: "",
       passwordConfirmation: "",
@@ -103,7 +121,29 @@ export default function FormSample() {
         noValidate
       >
         <label className="flex flex-col gap-2 text-sm text-slate-700">
-          メールアドレス
+          利用プラン
+          <select
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-base text-slate-900 outline-none ring-offset-2 focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+            {...register("plan", { valueAsNumber: true })}
+            aria-invalid={Boolean(errors.plan)}
+          >
+            <option value="">選択してください</option>
+            <option value="1">ベーシック</option>
+            <option value="2">プロ</option>
+            <option value="3">エンタープライズ</option>
+          </select>
+          {errors.plan?.message && (
+            <span className="text-xs text-rose-600">{errors.plan.message}</span>
+          )}
+        </label>
+
+        <label className="flex flex-col gap-2 text-sm text-slate-700">
+          <span className="flex items-center gap-2">
+            メールアドレス
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+              必須
+            </span>
+          </span>
           <input
             className="rounded-lg border border-slate-200 px-3 py-2 text-base text-slate-900 outline-none ring-offset-2 focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
             placeholder="you@example.com"
@@ -118,7 +158,12 @@ export default function FormSample() {
 
         <div className="grid gap-4 md:grid-cols-2">
           <label className="flex flex-col gap-2 text-sm text-slate-700">
-            パスワード
+            <span className="flex items-center gap-2">
+              パスワード
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                必須
+              </span>
+            </span>
             <input
               className="rounded-lg border border-slate-200 px-3 py-2 text-base text-slate-900 outline-none ring-offset-2 focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
               type="password"
@@ -132,7 +177,12 @@ export default function FormSample() {
           </label>
 
           <label className="flex flex-col gap-2 text-sm text-slate-700">
-            パスワード（確認）
+            <span className="flex items-center gap-2">
+              パスワード（確認）
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                必須
+              </span>
+            </span>
             <input
               className="rounded-lg border border-slate-200 px-3 py-2 text-base text-slate-900 outline-none ring-offset-2 focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
               type="password"
